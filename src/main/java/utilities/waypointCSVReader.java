@@ -56,4 +56,15 @@ public final class waypointCSVReader {
 		return waypointList;
 	}
 
+	/**
+	 * Assumes that the waypoint list is sorted by mobileID, which are consecutive
+	 * integers starting at 0.
+	 * 
+	 * @return highest numbered mobileID
+	 */
+	public int lastMobileID() {
+		int nwp = this.waypointList.size();
+		return (1 + this.waypointList.get(nwp - 1).mobileID());
+	}
+
 }

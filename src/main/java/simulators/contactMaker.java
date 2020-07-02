@@ -50,11 +50,13 @@ public class contactMaker {
 	private void aggregateSojournsForEachPlace() {
 		// Select the "hot" waypoints associated with sourceMobileIDs
 		List<Waypoint> sourceWaypoints = this.waypointList.parallelStream().filter(this.waypointComesFromSourceID::test)
-				.collect(Collectors.toList());
+				.collect(Collectors.toUnmodifiableList());
 		// Initialize key set to be the union of the
 		// placeIDs of "hot" waypoints, which we build first as a Set.
+		System.out.println("Number of waypoints attributed to source mobileIDs: " + sourceWaypoints.size());
 		Set<Integer> sourcePlaces = sourceWaypoints.parallelStream().mapToInt(wp -> wp.placeID()).distinct().boxed()
 				.collect(Collectors.toUnmodifiableSet());
+		System.out.println("Number of distinct placeIDs for source mobileIDs: " + sourcePlaces.size());
 		this.sojournsForEachPlace = sourcePlaces.parallelStream()
 				.collect(Collectors.toMap(place -> place, place -> new ArrayList<Sojourn>()));
 		/*
@@ -67,8 +69,6 @@ public class contactMaker {
 			this.sojournsForEachPlace.put(Integer.valueOf(wp.placeID()), currentEpisodes);
 		}
 	}
-
-
 
 	/**
 	 * TODO Random trials, in which targets are exposed to sources' sojourns.
@@ -91,9 +91,10 @@ public class contactMaker {
 		 */
 		this.exposedMobileIDs = susceptibleWaypoints.parallelStream().mapToInt(wp -> wp.mobileID()).distinct().boxed()
 				.collect(Collectors.toSet());
-
-		this.exposureCounts = this.exposedMobileIDs.stream()
-				.collect(Collectors.toMap(id -> id, id -> Long.valueOf(0)));// key is a mobileID
+		System.out.println("Number of non-source mobileIDs which visit places also visited by sources: "
+				+ this.exposedMobileIDs.size());
+		// key of this map is mobileID
+		this.exposureCounts = this.exposedMobileIDs.stream().collect(Collectors.toMap(id -> id, id -> Long.valueOf(0)));
 		/*
 		 * By construction, every waypoint in this list has a placeID visited by one or
 		 * more sources
@@ -117,8 +118,8 @@ public class contactMaker {
 		/*
 		 * No probability yet here -- every exposure causes infection
 		 */
-		this.exposedMobileIDs = this.exposureCounts.entrySet().stream().filter(e->(e.getValue() > 0))
-				.map(e->e.getKey()).collect(Collectors.toSet());
+		this.exposedMobileIDs = this.exposureCounts.entrySet().stream().filter(e -> (e.getValue() > 0))
+				.map(e -> e.getKey()).collect(Collectors.toSet());
 	}
 
 	/**
