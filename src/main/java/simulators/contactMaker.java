@@ -1,16 +1,26 @@
 /**
  * Purpose: given a "source" subset of the mobileID's, and the waypoints,
  * perform random trials in which space-time proximity to "sources"
- * creates a set of "target" mobileIDs
+ * infects a set of "target" mobileIDs. 
+ * 
+ * When a mobileID has had k exposures
+ * to a source, it is infected with probability 1 - (1-p)^k, where p is supplied in the constructor.
+ * 
+ * An exposure means that a mobileID waypoint has time stamp s with
+ * t <= s < t + w
+ * for some time stamp t of a source at the SAME placeID.
+ * The width w is supplied in the constructor.
  */
 package simulators;
 
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.List;
+import java.util.LongSummaryStatistics;
 import java.util.Map;
 import java.util.Set;
 import java.util.SplittableRandom;
+import java.util.function.Function;
 import java.util.function.Predicate;
 import java.util.stream.Collectors;
 
@@ -24,12 +34,18 @@ import utilities.Waypoint;
 public class contactMaker {
 
 	private Map<Integer, List<Sojourn>> sojournsForEachPlace; // keys are placeIDs
-	private Set<Integer> sourceMobileIDs, exposedMobileIDs;
-	private Map<Integer, Long> exposureCounts; // key set is complement of sourceMobileIDs
+	private Set<Integer> sourceMobileIDs, exposedMobileIDs, infectedMobileIDs;
+	/*
+	 * ExposureCounts.get(j) counts the exposures of mobileID j. Could be 0. Keys
+	 * are mobileIDs in complement of sourceMobileIDs which visit at least one place
+	 * visited by sources.
+	 */
+	private Map<Integer, Long> exposureCounts;
 	List<Waypoint> waypointList;
 	SplittableRandom g;
 	double timeWidth, transferProb;
 	private Predicate<Waypoint> waypointComesFromSourceID;
+	private Predicate<Double> infectedGivenExposures;
 
 	/**
 	 * 
@@ -40,8 +56,10 @@ public class contactMaker {
 		this.sourceMobileIDs = sources;
 		this.waypointList = Collections.unmodifiableList(waypoints);
 		this.waypointComesFromSourceID = (wp) -> this.sourceMobileIDs.contains(Integer.valueOf(wp.mobileID()));
+		g = new SplittableRandom();
+		this.infectedGivenExposures = (k) -> (g.nextDouble() > Math.pow(1.0 - this.transferProb, k));
 		this.aggregateSojournsForEachPlace();
-		this.countExposures();
+		this.setExposures();
 	}
 
 	/**
@@ -71,10 +89,9 @@ public class contactMaker {
 	}
 
 	/**
-	 * TODO Random trials, in which targets are exposed to sources' sojourns.
-	 * Currently - deterministic
+	 * Random trials, in which targets are exposed to sources' sojourns.
 	 */
-	private void countExposures() {
+	private void setExposures() {
 		/*
 		 * It suffices to restrict to waypoints where mobileID is NOT among sources, and
 		 * placeID is among the key set of this.sojournsForEachPlace
@@ -87,18 +104,18 @@ public class contactMaker {
 				.collect(Collectors.toList());
 		/*
 		 * Set the exposed mobile IDs as those which are NOT sources, and which sometime
-		 * visited a plac visited by a source
+		 * visited a place visited by a source.
 		 */
 		this.exposedMobileIDs = susceptibleWaypoints.parallelStream().mapToInt(wp -> wp.mobileID()).distinct().boxed()
 				.collect(Collectors.toSet());
 		System.out.println("Number of non-source mobileIDs which visit places also visited by sources: "
 				+ this.exposedMobileIDs.size());
-		// key of this map is mobileID
-		this.exposureCounts = this.exposedMobileIDs.stream().collect(Collectors.toMap(id -> id, id -> Long.valueOf(0)));
 		/*
-		 * By construction, every waypoint in this list has a placeID visited by one or
-		 * more sources
+		 * Key of "exposureCounts" is mobileID. For loop will set values. By
+		 * construction, every waypoint in "susceptibleWaypoints" has a placeID visited
+		 * by one or more sources
 		 */
+		this.exposureCounts = this.exposedMobileIDs.stream().collect(Collectors.toMap(id -> id, id -> Long.valueOf(0)));
 		long sum, value;
 		Integer place, mobileID;
 		for (Waypoint wp : susceptibleWaypoints) {
@@ -115,18 +132,20 @@ public class contactMaker {
 				exposureCounts.put(mobileID, value + sum);
 			}
 		}
+		System.out.println("Exposures computed");
 		/*
-		 * No probability yet here -- every exposure causes infection
+		 * Exposed means having k >=1 exposures (no probability mechanism)
 		 */
 		this.exposedMobileIDs = this.exposureCounts.entrySet().stream().filter(e -> (e.getValue() > 0))
 				.map(e -> e.getKey()).collect(Collectors.toSet());
-	}
+		/*
+		 * K exposures leads to infection with probability 1 - (1-p)^k
+		 */
+		this.infectedMobileIDs = this.exposureCounts.entrySet().stream()
+				.filter(e -> this.infectedGivenExposures.test((double) e.getValue())).map(e -> e.getKey())
+				.collect(Collectors.toSet());
+		System.out.println("Infections computed");
 
-	/**
-	 * @return the exposedMobileIDs
-	 */
-	public Set<Integer> getExposedMobileIDs() {
-		return exposedMobileIDs;
 	}
 
 	/**
@@ -137,9 +156,40 @@ public class contactMaker {
 	}
 
 	/**
+	 * @return pairs (k, N(k)), where N(k) is the number of mobileIDs with k
+	 *         exposures
+	 */
+	public Map<Long, Long> tallyExposureStatistics() {
+		return this.exposureCounts.values().stream()
+				.collect(Collectors.groupingBy(Function.identity(), Collectors.counting()));
+	}
+
+	/**
+	 * Summary statistics for number of exposures, conditional on at least one
+	 * exposure event
+	 */
+	public LongSummaryStatistics exposureCountSummary() {
+		return this.exposureCounts.values().stream().filter(v -> (v > 0)).collect(Collectors.summarizingLong(v -> v));
+	}
+
+	/**
 	 * @return the sojournsForEachPlace
 	 */
 	public Map<Integer, List<Sojourn>> getSojournsForEachPlace() {
 		return sojournsForEachPlace;
+	}
+
+	/**
+	 * @return the exposedMobileIDs
+	 */
+	public Set<Integer> getExposedMobileIDs() {
+		return exposedMobileIDs;
+	}
+
+	/**
+	 * @return the infectedMobileIDs
+	 */
+	public Set<Integer> getInfectedMobileIDs() {
+		return infectedMobileIDs;
 	}
 }
