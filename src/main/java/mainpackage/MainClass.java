@@ -3,7 +3,7 @@ package mainpackage;
 /**
  * Assumes that the waypoint list is sorted by mobileID, which are consecutive
  * integers starting at 0.
- * Ran 7.2.2020
+ * Ran 7.2.2020, 7.14.2020
  */
 
 import java.util.HashSet;
@@ -16,24 +16,31 @@ import java.util.TreeSet;
 
 import org.apache.commons.io.FilenameUtils;
 
-import simulators.contactMaker;
+import simulators.ContactMaker;
+import simulators.CountBasedContactMaker;
 import utilities.SetOfIntegersCSVWriter;
 import utilities.WaypointCSVReader;
 
 public class MainClass {
-	final double sojournWidth = 1.0 / 24.0; // unit = days
-	final double infectionProbability = 0.1;
-	final double initialInfectionRate = 0.02; // determines # sources
+	final double sojournWidth = 1.0 / 48.0; // unit = days
+	final double meanInfectionProbability = 0.1;
+	final double initialInfectionRate = 0.010; // determines # sources
+	final boolean probabilityVariesByPlace = false;
 	private WaypointCSVReader wpReader;
-	private contactMaker contact;
+	private ContactMaker<Integer> contact;
 	private Set<Integer> sourceMobileIDs;
 	Random g;
 
 	public MainClass(String waypointFilename) {
 		this.wpReader = new WaypointCSVReader(waypointFilename);
 		int numMobileIDs = this.wpReader.lastMobileID();
-		int sourceNumber = (int) Math.round((double) numMobileIDs * this.initialInfectionRate);
+		/*
+		 * Number of sources is Poisson(mu); mu = # mobileIDs * infection rate.
+		 * Approximate by rounding mu + Z*sqrt(mu), where Z is Gaussian.
+		 */
+		double mu = (double) numMobileIDs * this.initialInfectionRate;
 		g = new Random();
+		int sourceNumber = (int) Math.round(mu + Math.sqrt(mu) * (g.nextGaussian()));
 		this.sourceMobileIDs = new HashSet<>();
 		/*
 		 * Randomly select the sources from among all mobileIDs
@@ -42,12 +49,24 @@ public class MainClass {
 			this.sourceMobileIDs.add(Integer.valueOf(g.nextInt(numMobileIDs)));
 		}
 		System.out.println("A random subset of " + sourceNumber + " mobileIDs has been selected as sources.");
-		this.contact = new contactMaker(this.sojournWidth, this.infectionProbability, this.sourceMobileIDs,
-				this.wpReader.getWaypointList());
+		/**
+		 * If probability of infection is the same for all placeIDs, construct a
+		 * CountBasedContactMaker
+		 */
+		if (!probabilityVariesByPlace) {
+			this.contact = new CountBasedContactMaker(this.sojournWidth, this.meanInfectionProbability,
+					this.sourceMobileIDs, this.wpReader.getWaypointList());
+		} else {
+			// TODO
+		}
 		System.out.println("Exposures and infections have been simulated.");
 		System.out.println();
 	}
 
+	/**
+	 * 
+	 * @param args path to input file of FractalRabbit waypoints
+	 */
 	public static void main(String[] args) {
 		// boilerplate
 		System.out.println("Java Runtime " + Runtime.version().toString());
