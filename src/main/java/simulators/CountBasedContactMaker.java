@@ -62,7 +62,7 @@ public class CountBasedContactMaker implements ContactMaker<Integer> {
 		g = new SplittableRandom();
 		this.infectedGivenExposures = (k) -> (g.nextDouble() > Math.pow(1.0 - this.transferProb, k));
 		this.aggregateSojournsForEachPlace();
-		this.revealExposures();
+		this.countExposuresSimulateInfections();
 	}
 
 	/**
@@ -99,7 +99,7 @@ public class CountBasedContactMaker implements ContactMaker<Integer> {
 	/**
 	 * Random trials, in which targets are exposed to sources' sojourns.
 	 */
-	private void revealExposures() {
+	private void countExposuresSimulateInfections() {
 		/*
 		 * It suffices to restrict to waypoints where mobileID is NOT among sources, and
 		 * placeID is among the key set of this.sojournsForEachPlace

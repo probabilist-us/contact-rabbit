@@ -3,7 +3,7 @@ package mainpackage;
 /**
  * Assumes that the waypoint list is sorted by mobileID, which are consecutive
  * integers starting at 0.
- * Ran 7.2.2020, 7.14.2020
+ * Ran 7.2.2020, 7.14.2020. Needs revision 7.17.2020.
  */
 
 import java.util.HashSet;
