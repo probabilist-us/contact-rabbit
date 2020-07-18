@@ -2,8 +2,8 @@ package mainpackage;
 
 /**
  * Assumes that the waypoint list is sorted by mobileID, which are consecutive
- * integers starting at 0.
- * Ran 7.2.2020, 7.14.2020. Needs revision 7.17.2020.
+ * integers starting at 0. This could be fixed.
+ * Working correctly 7.17.20. Needs tuning.
  */
 
 import java.util.HashSet;
@@ -16,24 +16,24 @@ import java.util.TreeSet;
 
 import org.apache.commons.io.FilenameUtils;
 
-import simulators.ContactMaker;
-import simulators.CountBasedContactMaker;
+import simulators.PlaceDependentContactMaker;
+import utilities.GenericWaypointCSVReader;
 import utilities.SetOfIntegersCSVWriter;
-import utilities.WaypointCSVReader;
 
 public class MainClass {
 	final double sojournWidth = 1.0 / 48.0; // unit = days
 	final double meanInfectionProbability = 0.1;
 	final double initialInfectionRate = 0.010; // determines # sources
-	final boolean probabilityVariesByPlace = false;
-	private WaypointCSVReader wpReader;
-	private ContactMaker<Integer> contact;
+	final long seed = 1000000;
+	final boolean probabilityVariesByPlace = true;
+	private GenericWaypointCSVReader wpReader; // mobileID and placeID are integers
+	private PlaceDependentContactMaker<Integer, Integer> contact;
 	private Set<Integer> sourceMobileIDs;
 	Random g;
 
 	public MainClass(String waypointFilename) {
-		this.wpReader = new WaypointCSVReader(waypointFilename);
-		int numMobileIDs = this.wpReader.lastMobileID();
+		this.wpReader = new GenericWaypointCSVReader(waypointFilename);
+		int numMobileIDs = this.wpReader.lastMobileID(); // last one on the list, plus 1.
 		/*
 		 * Number of sources is Poisson(mu); mu = # mobileIDs * infection rate.
 		 * Approximate by rounding mu + Z*sqrt(mu), where Z is Gaussian.
@@ -49,16 +49,10 @@ public class MainClass {
 			this.sourceMobileIDs.add(Integer.valueOf(g.nextInt(numMobileIDs)));
 		}
 		System.out.println("A random subset of " + sourceNumber + " mobileIDs has been selected as sources.");
-		/**
-		 * If probability of infection is the same for all placeIDs, construct a
-		 * CountBasedContactMaker
-		 */
-		if (!probabilityVariesByPlace) {
-			this.contact = new CountBasedContactMaker(this.sojournWidth, this.meanInfectionProbability,
-					this.sourceMobileIDs, this.wpReader.getWaypointList());
-		} else {
-			// TODO
-		}
+
+		this.contact = new PlaceDependentContactMaker<Integer, Integer>(this.sojournWidth,
+				this.meanInfectionProbability, this.seed, this.sourceMobileIDs, this.wpReader.getWaypointList());
+
 		System.out.println("Exposures and infections have been simulated.");
 		System.out.println();
 	}
@@ -74,7 +68,7 @@ public class MainClass {
 		System.out.println("Available processors: " + rt.availableProcessors());
 		double gB = 1074741824.0;
 		System.out.println("Maximum available memory: " + (double) rt.maxMemory() / gB + " Gb.");
-		boolean verboseStatistics = false;
+		boolean verboseStatistics = true;
 		// contact rabbit main class
 		String filename = args[0];
 		MainClass mainClass = new MainClass(filename);
@@ -96,10 +90,24 @@ public class MainClass {
 				System.out.println(e.getValue() + " instances of " + e.getKey() + " exposures.");
 			}
 		}
-		System.out.println("Final Result: " + mainClass.sourceMobileIDs.size() + " sources led to "
-				+ mainClass.contact.getInfectedMobileIDs().size() + " infected targets.");
+		System.out.println("Testing constancy of probability for each place.");
+		int counter = 0;
+		for(Map.Entry<Integer,Double> e : mainClass.contact.getProbabilitiesForEachPlace().entrySet()) {
+			counter++;
+			if(counter % 100 ==0 ) {
+				System.out.println("Exposure at place " + e.getKey() + " leads to infection with probability " + e.getValue());
+			}
+		}
+		
+		
+		
 		System.out.println("Sources: " + mainClass.sourceMobileIDs.toString());
+		System.out.println("Constant Probability Final Result: " + mainClass.sourceMobileIDs.size() + " sources led to "
+				+ mainClass.contact.getInfectedMobileIDs().size() + " infected targets.");
 		System.out.println("Targets: " + mainClass.contact.getInfectedMobileIDs().toString());
+		System.out.println("Variable Probability Final Result: " + mainClass.sourceMobileIDs.size() + " sources led to "
+				+ mainClass.contact.getVariableRateInfectedMobileIDs() + " infected targets.");
+		System.out.println("Targets: " + mainClass.contact.getVariableRateInfectedMobileIDs().toString());
 
 		/////////////////////////////////// CSV OUTPUT
 		/////////////////////////////////// /////////////////////////////////////////////
@@ -108,7 +116,16 @@ public class MainClass {
 		SortedSet<Integer> sourcesSorted = new TreeSet<>(mainClass.sourceMobileIDs);
 		SetOfIntegersCSVWriter cw1 = new SetOfIntegersCSVWriter(sourcesSorted);
 		cw1.writeElements(prefix + "-SOURCES-" + identifier);
-		SortedSet<Integer> targetsSorted = new TreeSet<>(mainClass.contact.getInfectedMobileIDs());
+		/*
+		 * Either print the variable probability target list, or the constant
+		 * probability target list
+		 */
+		SortedSet<Integer> targetsSorted = new TreeSet<>();
+		if (mainClass.probabilityVariesByPlace) {
+			targetsSorted.addAll(mainClass.contact.getVariableRateInfectedMobileIDs());
+		} else {
+			targetsSorted.addAll(mainClass.contact.getInfectedMobileIDs());
+		}
 		SetOfIntegersCSVWriter cw2 = new SetOfIntegersCSVWriter(targetsSorted);
 		cw2.writeElements(prefix + "-TARGETS-" + identifier);
 		System.out.println("Sources and targets written to file.");

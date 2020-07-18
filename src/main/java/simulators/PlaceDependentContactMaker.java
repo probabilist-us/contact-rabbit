@@ -10,6 +10,8 @@ package simulators;
 import java.util.ArrayList;
 import java.util.Collections;
 import java.util.HashMap;
+import java.util.HashSet;
+import java.util.Iterator;
 import java.util.List;
 import java.util.LongSummaryStatistics;
 import java.util.Map;
@@ -40,8 +42,7 @@ public class PlaceDependentContactMaker<M, P> implements ContactMaker<M> {
 	 * occurred. Each item in this list is a single exposure.
 	 */
 	private Map<M, List<P>> exposurePlaceListByID;
-	private Set<M> sourceMobileIDs, exposedMobileIDs, infectedMobileIDs, variableRateInfectedMobileIDs;
-	SplittableRandom g;
+	private Set<M> sourceMobileIDs, vulnerableMobileIDs, infectedMobileIDs, variableRateInfectedMobileIDs;
 	double timeWidth, transferProb;
 	private long seed; // for random simulation of probabilities at each place
 	private Predicate<GenericWaypoint<M, P>> waypointComesFromSourceID;
@@ -114,54 +115,73 @@ public class PlaceDependentContactMaker<M, P> implements ContactMaker<M> {
 		List<GenericWaypoint<M, P>> susceptibleWaypoints = this.waypointList.parallelStream()
 				.filter(isSusceptible::test).collect(Collectors.toList());
 		/*
-		 * Set the exposed mobile IDs as those which are NOT sources, and which sometime
-		 * visited a place visited by a source.
+		 * Set the vulnerable mobile IDs as those which are NOT sources, and which
+		 * sometime visited a place visited by a source.
 		 */
-		this.exposedMobileIDs = susceptibleWaypoints.parallelStream().map(wp -> wp.mobileID()).distinct()
+		this.vulnerableMobileIDs = susceptibleWaypoints.parallelStream().map(wp -> wp.mobileID()).distinct()
 				.collect(Collectors.toSet());
 		System.out.println("Number of non-source mobileIDs which visit places also visited by sources: "
-				+ this.exposedMobileIDs.size());
+				+ this.vulnerableMobileIDs.size());
 		/*
-		 * Key of "exposureCounts" is mobileID. For loop will population list of places.
-		 * By construction, every waypoint in "susceptibleWaypoints" has a placeID
-		 * visited by one or more sources.
+		 * Key of "exposurePlaceListByID" is mobileID. Loop will populate list of
+		 * places. By construction, every waypoint in "susceptibleWaypoints" has a
+		 * placeID visited by one or more sources. Every value is a NONEMPTY list.
 		 */
-		this.exposurePlaceListByID = this.exposedMobileIDs.stream()
-				.collect(Collectors.toMap(mobileID -> mobileID, mobileID -> new ArrayList<P>()));
+		this.exposurePlaceListByID = new HashMap<>();
 		int counter = 0;
 		for (GenericWaypoint<M, P> wp : susceptibleWaypoints) {
 			for (Sojourn soj : this.sojournsForEachPlace.get(wp.placeID())) {
 				if (soj.contains(wp.timeStamp())) {
+					if (!this.exposurePlaceListByID.keySet().contains(wp.mobileID())) {
+						this.exposurePlaceListByID.put(wp.mobileID(), new ArrayList<P>());
+					}
 					// appends place to end of exposure list
 					this.exposurePlaceListByID.get(wp.mobileID()).add(wp.placeID());
 					counter++;
 				}
 			}
 		}
+		///////////////////// DIAGNOSTICS///////////////////////////////////////////////////////////
 		System.out.println(counter + " exposures computed.");
+		System.out.println("Number of exposed mobileIDs is " + this.exposurePlaceListByID.keySet().size());
+		Iterator<M> mobileIt = this.exposurePlaceListByID.keySet().iterator();
+		M mobileID = mobileIt.next();
+		System.out.println(
+				"MobileID " + mobileID + " has exposures at " + this.exposurePlaceListByID.get(mobileID).toString());
 		/*
 		 * Exposed means having k >=1 exposures (no probability mechanism)
 		 */
-		this.exposedMobileIDs = this.exposurePlaceListByID.entrySet().stream().filter(e -> (e.getValue().size() > 0))
-				.map(e -> e.getKey()).collect(Collectors.toSet());
 	}
 
 	/*
 	 * Only depends on NUMBER of exposures, not on where they occurred.
 	 */
 	public void simulateConstantRateInfections() {
+		Random g = new Random();
+		/*
+		 * Map<M,Integer> exposureCounts =
+		 * this.exposurePlaceListByID.entrySet().stream()
+		 * .collect(Collectors.toMap(e->e.getKey(),
+		 * e->Integer.valueOf(e.getValue().size() ) ) ); IntPredicate
+		 * infectedGivenExposures = (k) -> (g.nextDouble() > Math.pow(1.0 -
+		 * this.transferProb, (double) k));
+		 * 
+		 * this.infectedMobileIDs = exposureCounts.entrySet().stream() .filter(e ->
+		 * infectedGivenExposures.test(e.getValue().intValue())).map(e -> e.getKey())
+		 * .collect(Collectors.toSet());
+		 */
 		/*
 		 * k exposures leads to infection with probability 1 - (1-p)^k
 		 */
-		IntPredicate infectedGivenExposures = (k) -> (g.nextDouble() > Math.pow(1.0 - this.transferProb, (double) k));
-		/*
-		 * Apply infectedGivenExposures to the NUMBER of exposures of each exposed
-		 * mobileID
-		 */
-		this.infectedMobileIDs = this.exposurePlaceListByID.entrySet().stream()
-				.filter(e -> infectedGivenExposures.test(e.getValue().size())).map(e -> e.getKey())
-				.collect(Collectors.toSet());
-		System.out.println("Infections computed");
+		this.infectedMobileIDs = new HashSet<M>();
+		double k;
+		for (Map.Entry<M, List<P>> e : this.exposurePlaceListByID.entrySet()) {
+			k = (double) e.getValue().size();
+			if (g.nextDouble() > Math.pow(1.0 - this.transferProb, k)) {
+				this.infectedMobileIDs.add(e.getKey());
+			}
+		}
+		System.out.println(this.infectedMobileIDs.size() + " Infections computed");
 	}
 
 	/*
@@ -216,6 +236,7 @@ public class PlaceDependentContactMaker<M, P> implements ContactMaker<M> {
 		/*
 		 * Select losers in Bernoulli trials where success means remaining uninfected.
 		 */
+		Random g = new Random();
 		this.variableRateInfectedMobileIDs = nonInfectionProbabilityMap.entrySet().stream()
 				.filter(e -> (g.nextDouble() > e.getValue())).map(e -> e.getKey()).collect(Collectors.toSet());
 	}
@@ -241,10 +262,10 @@ public class PlaceDependentContactMaker<M, P> implements ContactMaker<M> {
 
 	/**
 	 * @override
-	 * @return the exposedMobileIDs
+	 * @return the vulnerableMobileIDs
 	 */
 	public Set<M> getExposedMobileIDs() {
-		return exposedMobileIDs;
+		return this.exposurePlaceListByID.keySet();
 	};
 
 	/**
@@ -267,6 +288,13 @@ public class PlaceDependentContactMaker<M, P> implements ContactMaker<M> {
 	 */
 	public Map<M, List<P>> getExposurePlaceListByID() {
 		return exposurePlaceListByID;
+	}
+
+	/**
+	 * @return the vulnerableMobileIDs
+	 */
+	public Set<M> getVulnerableMobileIDs() {
+		return vulnerableMobileIDs;
 	}
 
 	/**

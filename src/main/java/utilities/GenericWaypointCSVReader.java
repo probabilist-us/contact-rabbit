@@ -1,5 +1,5 @@
 /**
- * 
+ * The mobileID and placeID are not generic. They are simply Integers.
  */
 package utilities;
 
@@ -13,18 +13,18 @@ import org.apache.commons.csv.CSVFormat;
 import org.apache.commons.csv.CSVRecord;
 
 /**
- * @author rwdarli
- *
+ * @author rwdarli.
+ * 
  */
-public final class WaypointCSVReader {
+public final class GenericWaypointCSVReader {
 
 	/**
 	 * 
 	 */
 	final String csvFile;
-	private List<Waypoint> waypointList;
+	private List<GenericWaypoint<Integer, Integer>> waypointList;
 
-	public WaypointCSVReader(String filename) {
+	public GenericWaypointCSVReader(String filename) {
 		this.csvFile = filename;
 		this.waypointList = new ArrayList<>();
 		this.readFile();
@@ -35,8 +35,8 @@ public final class WaypointCSVReader {
 			Reader in = new FileReader(this.csvFile);
 			Iterable<CSVRecord> triples = CSVFormat.DEFAULT.withFirstRecordAsHeader().parse(in);
 			for (CSVRecord triple : triples) {
-				this.waypointList.add(new Waypoint(Integer.parseInt(triple.get(0)), Double.parseDouble(triple.get(1)),
-						Integer.parseInt(triple.get(2))));
+				this.waypointList.add(new GenericWaypoint<Integer, Integer>(Integer.parseInt(triple.get(0)),
+						Double.parseDouble(triple.get(1)), Integer.parseInt(triple.get(2))));
 			}
 			in.close();
 
@@ -51,10 +51,9 @@ public final class WaypointCSVReader {
 	/**
 	 * @return unmodifiable version of the waypointList
 	 */
-	public List<Waypoint> getWaypointList() {
+	public List<GenericWaypoint<Integer, Integer>> getWaypointList() {
 		return waypointList;
 	}
-	
 
 	/**
 	 * Assumes that the waypoint list is sorted by mobileID, which are consecutive
