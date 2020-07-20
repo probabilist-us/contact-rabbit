@@ -25,7 +25,7 @@ public class MainClass {
 	final double meanInfectionProbability = 0.1;
 	final double initialInfectionRate = 0.010; // determines # sources
 	final long seed = 1000000;
-	final boolean probabilityVariesByPlace = true;
+	final boolean probabilityVariesByPlaceForTargets = true;
 	private GenericWaypointCSVReader wpReader; // mobileID and placeID are integers
 	private PlaceDependentContactMaker<Integer, Integer> contact;
 	private Set<Integer> sourceMobileIDs;
@@ -94,7 +94,7 @@ public class MainClass {
 		int counter = 0;
 		for(Map.Entry<Integer,Double> e : mainClass.contact.getProbabilitiesForEachPlace().entrySet()) {
 			counter++;
-			if(counter % 100 ==0 ) {
+			if(counter % 1000 ==0 ) {
 				System.out.println("Exposure at place " + e.getKey() + " leads to infection with probability " + e.getValue());
 			}
 		}
@@ -106,7 +106,7 @@ public class MainClass {
 				+ mainClass.contact.getInfectedMobileIDs().size() + " infected targets.");
 		System.out.println("Targets: " + mainClass.contact.getInfectedMobileIDs().toString());
 		System.out.println("Variable Probability Final Result: " + mainClass.sourceMobileIDs.size() + " sources led to "
-				+ mainClass.contact.getVariableRateInfectedMobileIDs() + " infected targets.");
+				+ mainClass.contact.getVariableRateInfectedMobileIDs().size() + " infected targets.");
 		System.out.println("Targets: " + mainClass.contact.getVariableRateInfectedMobileIDs().toString());
 
 		/////////////////////////////////// CSV OUTPUT
@@ -121,7 +121,7 @@ public class MainClass {
 		 * probability target list
 		 */
 		SortedSet<Integer> targetsSorted = new TreeSet<>();
-		if (mainClass.probabilityVariesByPlace) {
+		if (mainClass.probabilityVariesByPlaceForTargets) {
 			targetsSorted.addAll(mainClass.contact.getVariableRateInfectedMobileIDs());
 		} else {
 			targetsSorted.addAll(mainClass.contact.getInfectedMobileIDs());
